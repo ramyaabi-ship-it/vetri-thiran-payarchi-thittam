@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduGenie - AI Learning Assistant</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="container">
+  <header>
+    <div class="badge">✨ Gemini-powered learning</div>
+    <h1>EduGenie</h1>
+    <p>Ask, understand, revise, quiz yourself, and build a learning path.</p>
+  </header>
+
+  <section class="card">
+    <label for="task">Choose a task</label>
+    <select id="task">
+      <option value="qa">Ask a Question</option>
+      <option value="explain">Explain a Topic</option>
+      <option value="quiz">Generate Quiz</option>
+      <option value="summarize">Summarize</option>
+      <option value="learn">Learning Path</option>
+    </select>
+
+    <label for="input">Your content</label>
+    <textarea id="input" rows="9" placeholder="Type a question, topic, or educational passage..."></textarea>
+
+    <div id="levelWrap" class="hidden">
+      <label for="level">Learner level</label>
+      <select id="level">
+        <option>beginner</option>
+        <option>intermediate</option>
+        <option>advanced</option>
+      </select>
+    </div>
+
+    <button id="run">Generate</button>
+    <div id="status" class="status"></div>
+    <article id="result" class="result"></article>
+  </section>
+</main>
+<script>
+const task = document.getElementById("task");
+const input = document.getElementById("input");
+const levelWrap = document.getElementById("levelWrap");
+const run = document.getElementById("run");
+const status = document.getElementById("status");
+const result = document.getElementById("result");
+
+task.addEventListener("change", () => {
+  levelWrap.classList.toggle("hidden", task.value !== "learn");
+  const placeholders = {
+    qa: "Example: What is the difference between TCP and UDP?",
+    explain: "Example: Explain the Pythagorean theorem.",
+    quiz: "Paste a topic or passage to turn into 3 MCQs.",
+    summarize: "Paste the educational passage you want summarized.",
+    learn: "Example: SQL"
+  };
+  input.placeholder = placeholders[task.value];
+});
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",""":"&quot;","'":"&#039;"
+  }[c]));
+}
+
+function renderText(text) {
+  return escapeHtml(text).replace(/
+/g, "<br>");
+}
+
+run.addEventListener("click", async () => {
+  const text = input.value.trim();
+  if (!text) {
+    result.innerHTML = "<p>Please enter some content first.</p>";
+    return;
+  }
+
+  const endpoints = {
+    qa: ["/qa", {question: text}],
+    explain: ["/explain", {text}],
+    quiz: ["/quiz", {text}],
+    summarize: ["/summarize", {text}],
+    learn: ["/learn/recommendations", {topic: text, level: document.getElementById("level").value}]
+  };
+
+  status.textContent = "Generating...";
+  run.disabled = true;
+  result.innerHTML = "";
+
+  try {
+    const [url, body] = endpoints[task.value];
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Request failed.");
+
+    if (task.value === "quiz") {
+      result.innerHTML = data.questions.map((q, i) => `
+        <div class="quiz">
+          <h3>${i + 1}. ${escapeHtml(q.question)}</h3>
+          ${q.options.map(o => `<button class="option" data-answer="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join("")}
+          <p class="answer hidden"><strong>Answer:</strong> ${escapeHtml(q.correct_answer)}<br>${escapeHtml(q.explanation)}</p>
+        </div>
+      `).join("");
+      result.querySelectorAll(".option").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const parent = btn.parentElement;
+          parent.querySelector(".answer").classList.remove("hidden");
+        });
+      });
+    } else {
+      const key = task.value === "qa" ? "answer" :
+                  task.value === "explain" ? "explanation" :
+                  task.value === "summarize" ? "summary" : "learning_path";
+      result.innerHTML = `<p>${renderText(data[key])}</p>`;
+    }
+    status.textContent = "Completed";
+  } catch (err) {
+    status.textContent = "Error";
+    result.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+  } finally {
+    run.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
